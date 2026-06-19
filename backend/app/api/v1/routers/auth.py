@@ -1,0 +1,52 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+from app.models.models import User
+from app.api.v1.schemas import UserCreate, UserLogin, UserResponse, Token
+from app.core.security import get_password_hash, verify_password, create_access_token
+
+router = APIRouter()
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.email == user_in.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="A user with this email address already exists."
+        )
+    
+    # Create new user
+    new_user = User(
+        email=user_in.email,
+        password_hash=get_password_hash(user_in.password),
+        full_name=user_in.full_name,
+        organization=user_in.organization,
+        role="creator",
+        plan_type="free"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@router.post("/login", response_model=Token)
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == credentials.email).first()
+    if not user or not verify_password(credentials.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = create_access_token(subject=user.email)
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "email": user.email,
+        "role": user.role,
+        "plan_type": user.plan_type,
+        "credits": user.credits
+    }
