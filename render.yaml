@@ -1,0 +1,50 @@
+services:
+  # 1. FastAPI Backend (Python)
+  - type: web
+    name: earlytrend-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: earlytrend-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: earlytrend-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+  # 2. React Frontend (Static Site)
+  - type: static
+    name: earlytrend-frontend
+    buildCommand: npm run build
+    staticPublishPath: dist
+    rootDir: frontend
+    plan: free
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: earlytrend-backend
+          type: web
+          property: url
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # 3. Redis Cache
+  - type: redis
+    name: earlytrend-redis
+    plan: free
+    ipAllowList: [] # Only allow internal connections
+
+databases:
+  # 4. PostgreSQL Database
+  - name: earlytrend-db
+    plan: free
